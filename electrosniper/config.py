@@ -89,8 +89,8 @@ def load_settings(db_overrides: dict[str, str] | None = None) -> Settings:
 
     return Settings(
         anthropic_api_key=clean_key,
-        anthropic_triage_model=get("ANTHROPIC_TRIAGE_MODEL", "claude-haiku-4-5-20251001").strip(),
-        anthropic_deep_model=get("ANTHROPIC_DEEP_MODEL", "claude-sonnet-4-5-20250929").strip(),
+        anthropic_triage_model=get("ANTHROPIC_TRIAGE_MODEL", "claude-haiku-5-5").strip(),
+        anthropic_deep_model=get("ANTHROPIC_DEEP_MODEL", "claude-sonnet-5-5").strip(),
         telegram_bot_token=get("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=get("TELEGRAM_CHAT_ID", "").strip(),
         scan_interval_minutes=max(5, _as_int(get("SCAN_INTERVAL_MINUTES", "10"), 10)),

@@ -42,6 +42,20 @@ FB_QUERIES = [
     "machine cafe hs",
 ]
 
+# Textes d'interface Facebook qui ne sont pas des titres (comparés après normalize_text)
+FB_UI_JUNK = {
+    "liste des partenaires",
+    "partenaires",
+    "sponsorise",
+    "sponsored",
+    "expedition disponible",
+    "livraison disponible",
+    "nouveau",
+    "baisse de prix",
+    "just listed",
+    "gratuit",
+}
+
 NO_SHIPPING_PATTERNS = [
     r"\bmain propre uniquement\b",
     r"\bremise en main propre uniquement\b",
@@ -318,23 +332,16 @@ class FacebookScraper(BaseScraper):
                         break
                 if price is None:
                     continue
+                if currency != "EUR":
+                    # Résultat étranger (ex : Pologne via le filtre "livraison") : inachetable depuis la France
+                    continue
 
-                fb_ui_junk = {
-                    "liste des partenaires",
-                    "sponsorise",
-                    "sponsorisé",
-                    "sponsored",
-                    "expedition disponible",
-                    "expédition disponible",
-                    "livraison disponible",
-                    "nouveau",
-                    "baisse de prix",
-                    "just listed",
-                }
                 remaining = [
                     ln
                     for i, ln in enumerate(lines)
-                    if i != price_idx and ln.strip().lower() not in fb_ui_junk
+                    if i != price_idx
+                    and normalize_text(ln) not in FB_UI_JUNK
+                    and self._parse_price(ln)[0] is None  # ancien prix barré
                 ]
                 if not remaining:
                     continue

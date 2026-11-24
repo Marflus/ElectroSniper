@@ -9,6 +9,7 @@ from electrosniper.ai_analyzer import AIAnalyzer
 from electrosniper.config import Settings, load_settings
 from electrosniper.db import Database
 from electrosniper.filters import evaluate_listing
+from electrosniper.models import RawListing
 from electrosniper.notifier import TelegramNotifier
 from electrosniper.scrapers import (
     BaseScraper,
@@ -47,7 +48,40 @@ class ScanEngine:
     def get_settings(self) -> Settings:
         return load_settings(self.db.get_all_settings())
 
+    def refilter_existing(self) -> int:
+        """Ré-applique le filtre local (qui a pu évoluer) aux annonces pas encore classées."""
+        settings = self.get_settings()
+        changed = 0
+        for row in self.db.iter_untouched_listings():
+            raw = RawListing(
+                site=row["site"],
+                external_id=row["external_id"],
+                title=row["title"] or "",
+                description=row["description"] or "",
+                price=float(row["price"] or 0),
+                url=row["url"] or "",
+                shipping_available=bool(row["shipping_available"]),
+                shipping_price=row["shipping_price"],
+                shipping_note=row["shipping_note"] or "",
+            )
+            flt = evaluate_listing(raw, settings)
+            # Seules les exclusions strictes (accessoire, téléphone, TV...) sont ré-appliquées :
+            # l'état "pour pièces" du site n'est pas stocké, on ne peut donc pas rejuger le reste.
+            if row["filter_passed"] and not flt.accepted and flt.reject_reason.startswith("Exclu"):
+                flt.already_opened = bool(row["already_opened"])
+                flt.opened_reason = row["opened_reason"] or ""
+                flt.category = row["category"] or flt.category
+                self.db.update_filter_result(row["id"], flt)
+                changed += 1
+        if changed:
+            logger.info("Filtre local ré-appliqué : %s annonces mises à jour", changed)
+        return changed
+
     def start(self) -> None:
+        try:
+            self.refilter_existing()
+        except Exception:
+            logger.exception("Ré-application du filtre impossible")
         if self._task is None or self._task.done():
             self._stop_event.clear()
             self._task = asyncio.create_task(self._loop())
@@ -150,11 +184,7 @@ class ScanEngine:
                 self.db.update_triage(listing["id"], triage)
                 analyzed_count += 1
 
-                should_alert = (
-                    triage.score >= settings.min_alert_score
-                    and triage.repair_score >= 5
-                    and triage.estimated_profit_eur >= settings.min_alert_profit_eur
-                )
+                should_alert = triage.verdict == "GO"
                 if should_alert:
                     fresh = self.db.get_listing(listing["id"])
                     if fresh and not fresh.get("notified_at"):

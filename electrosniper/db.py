@@ -8,6 +8,23 @@ from typing import Any, Iterator
 
 from electrosniper.config import DB_PATH
 from electrosniper.models import DeepAnalysisResult, FilterResult, RawListing, TriageResult
+from electrosniper.scoring import SCORE_VERSION
+
+# Colonnes ajoutées après la première version (migration automatique)
+EXTRA_LISTING_COLUMNS: dict[str, str] = {
+    "success_pct": "INTEGER",
+    "profit_if_success_eur": "REAL",
+    "max_loss_eur": "REAL",
+    "max_buy_price_eur": "REAL",
+    "score_version": "INTEGER DEFAULT 0",
+}
+
+# Une annonce est à (re)noter si jamais notée, ou notée avec un ancien algorithme
+# (sauf si une analyse approfondie existe : on ne l'écrase pas automatiquement).
+PENDING_TRIAGE_SQL = (
+    "filter_passed = 1 AND (ai_analyzed = 0 OR "
+    "(COALESCE(score_version, 0) < ? AND deep_analysis_json IS NULL))"
+)
 
 
 def utc_now_iso() -> str:
@@ -130,6 +147,20 @@ class Database:
                 );
                 """
             )
+            existing = {r["name"] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
+            for col, ddl in EXTRA_LISTING_COLUMNS.items():
+                if col not in existing:
+                    conn.execute(f"ALTER TABLE listings ADD COLUMN {col} {ddl}")
+
+            # Annonces Facebook étrangères (prix en PLN) : inachetables depuis la France
+            conn.execute(
+                """
+                UPDATE listings
+                SET filter_passed = 0,
+                    reject_reason = 'Annonce étrangère (Facebook hors France, prix en PLN)'
+                WHERE site = 'facebook' AND description LIKE '%converti depuis PLN%'
+                """
+            )
 
     def listing_exists(self, site: str, external_id: str) -> bool:
         with self.connect() as conn:
@@ -211,6 +242,11 @@ class Database:
                     ai_verdict = ?,
                     ai_reasoning = ?,
                     ai_model = ?,
+                    success_pct = ?,
+                    profit_if_success_eur = ?,
+                    max_loss_eur = ?,
+                    max_buy_price_eur = ?,
+                    score_version = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -226,6 +262,11 @@ class Database:
                     res.verdict,
                     res.reasoning,
                     res.model,
+                    res.success_pct,
+                    res.profit_if_success_eur,
+                    res.max_loss_eur,
+                    res.max_buy_price_eur,
+                    res.score_version,
                     now,
                     listing_id,
                 ),
@@ -252,6 +293,11 @@ class Database:
                     ai_verdict = ?,
                     ai_reasoning = ?,
                     ai_model = ?,
+                    success_pct = ?,
+                    profit_if_success_eur = ?,
+                    max_loss_eur = ?,
+                    max_buy_price_eur = ?,
+                    score_version = ?,
                     deep_analysis_json = ?,
                     deep_analyzed_at = ?,
                     updated_at = ?
@@ -267,8 +313,13 @@ class Database:
                     res.estimated_net_profit_eur,
                     res.suspected_fault,
                     ai_verdict,
-                    res.summary[:300],
+                    res.summary[:400],
                     res.model,
+                    res.success_pct,
+                    res.profit_if_success_eur,
+                    res.max_loss_eur,
+                    res.recommended_max_buy_eur,
+                    res.score_version,
                     payload,
                     now,
                     now,
@@ -311,22 +362,50 @@ class Database:
     def get_pending_triage(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT * FROM listings
-                WHERE filter_passed = 1 AND ai_analyzed = 0
-                ORDER BY created_at DESC
+                WHERE {PENDING_TRIAGE_SQL}
+                ORDER BY ai_analyzed ASC, created_at DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (SCORE_VERSION, limit),
             ).fetchall()
             return [dict(r) for r in rows]
 
     def count_pending_triage(self) -> int:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT COUNT(*) AS c FROM listings WHERE filter_passed = 1 AND ai_analyzed = 0"
+                f"SELECT COUNT(*) AS c FROM listings WHERE {PENDING_TRIAGE_SQL}", (SCORE_VERSION,)
             ).fetchone()
             return int(row["c"] or 0)
+
+    def iter_untouched_listings(self) -> list[dict[str, Any]]:
+        """Annonces pas encore classées par l'utilisateur (pour ré-appliquer le filtre local)."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM listings WHERE user_status = 'new' "
+                "AND reject_reason NOT LIKE 'Annonce étrangère%'"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def update_filter_result(self, listing_id: int, flt: FilterResult) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE listings SET filter_passed = ?, reject_reason = ?, category = ?,
+                    already_opened = ?, opened_reason = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    1 if flt.accepted else 0,
+                    flt.reject_reason,
+                    flt.category,
+                    1 if flt.already_opened else 0,
+                    flt.opened_reason,
+                    utc_now_iso(),
+                    listing_id,
+                ),
+            )
 
     def get_listing(self, listing_id: int) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -400,7 +479,7 @@ class Database:
             params.extend([like, like, like])
 
         order_map = {
-            "score": "COALESCE(ai_score, -1) DESC, created_at DESC",
+            "score": "(COALESCE(score_version, 0) >= 2 OR deep_analysis_json IS NOT NULL) DESC, COALESCE(ai_score, -1) DESC, created_at DESC",
             "recent": "created_at DESC",
             "profit": "COALESCE(estimated_profit_eur, -999) DESC, COALESCE(ai_score, -1) DESC",
             "price_asc": "price ASC, COALESCE(ai_score, -1) DESC",

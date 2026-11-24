@@ -26,11 +26,12 @@ const CAT_LABELS = {
   autre: "Autre",
 };
 
-const SITE_FAVICONS = {
-  leboncoin: "https://www.google.com/s2/favicons?domain=leboncoin.fr&sz=64",
-  vinted: "https://www.google.com/s2/favicons?domain=vinted.fr&sz=64",
-  facebook: "https://www.google.com/s2/favicons?domain=facebook.com&sz=64",
-  ebay: "https://www.google.com/s2/favicons?domain=ebay.fr&sz=64",
+// Pastilles de site en SVG inline : aucun appel réseau, rendu net à toutes les tailles
+const SITE_LOGOS = {
+  leboncoin: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#ff6e14"/><text x="12" y="16" text-anchor="middle" font-family="Arial, sans-serif" font-size="9.5" font-weight="700" fill="#fff">lbc</text></svg>`,
+  vinted: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#09b1ba"/><text x="12" y="17.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#fff">V</text></svg>`,
+  facebook: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1877f2"/><text x="12.6" y="19" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#fff">f</text></svg>`,
+  ebay: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#fff"/><text x="12" y="16.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#e53238">e</text></svg>`,
 };
 
 const ICONS = {
@@ -50,10 +51,16 @@ const ICONS = {
 };
 
 function siteFaviconHtml(site, large = false) {
-  const url = SITE_FAVICONS[site];
-  if (!url) return "";
+  const svg = SITE_LOGOS[site];
+  if (!svg) return "";
   const cls = large ? "site-favicon-lg" : "site-favicon";
-  return `<img class="${cls}" src="${url}" alt="" loading="lazy" onerror="this.style.display='none'" />`;
+  return `<span class="site-logo ${cls}">${svg}</span>`;
+}
+
+function euro(v, signed = false) {
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return "--";
+  const n = Math.round(Number(v));
+  return `${signed && n > 0 ? "+" : ""}${n} €`;
 }
 
 function esc(str) {
@@ -261,15 +268,24 @@ function renderListings(items, showRejected) {
           : it.shipping_note || (it.shipping_available ? "Livraison dispo" : "Main propre");
 
       const profit = it.estimated_profit_eur;
+      const hasRisk = it.success_pct !== null && it.success_pct !== undefined;
       const profitHtml =
         profit !== null && profit !== undefined
-          ? `<span class="${profit >= 0 ? "profit-pos" : "profit-neg"}">${profit >= 0 ? "+" : ""}${Math.round(profit)} € net</span>`
+          ? `<span class="${profit >= 0 ? "profit-pos" : "profit-neg"}" title="${hasRisk ? "Gain espéré, pondéré par le risque d'échec de la réparation" : "Marge nette estimée"}">${euro(profit, true)} ${hasRisk ? "espéré" : "net"}</span>`
           : `<span class="muted">En attente IA</span>`;
+      const riskLine = hasRisk
+        ? `<div class="profit-row risk-row">
+             <span>Réussite ~${it.success_pct}% · si réparé ${euro(it.profit_if_success_eur, true)}</span>
+             ${it.max_buy_price_eur ? `<span title="Prix d'achat max conseillé (hors port)">Max ${euro(it.max_buy_price_eur)}</span>` : `<span class="profit-neg">Pas rentable</span>`}
+           </div>`
+        : "";
 
       const photoHtml = it.image_url
         ? `<img class="card-photo" src="${esc(it.image_url)}" alt="" loading="lazy" onerror="this.style.display='none'" />`
         : `<div class="card-photo-placeholder">${ICONS.imgOff}<span>Photo non disponible</span></div>`;
 
+      // Note calculée par l'ancien algorithme : affichée grisée en attendant la renotation
+      const staleScore = it.ai_analyzed && !it.score_version && !it.deep_analysis;
       const scoreDisplay = it.ai_analyzed ? it.ai_score : "--";
       const isFav = it.user_status === "favorite";
 
@@ -279,7 +295,7 @@ function renderListings(items, showRejected) {
             ${photoHtml}
             <div class="media-overlay-top">
               <span class="site-tag-float">${siteFaviconHtml(it.site, true)}${esc(it.site)}</span>
-              <div class="score-pill ${scoreClass(it.ai_score)}" title="Note globale IA /100">${scoreDisplay}</div>
+              <div class="score-pill ${staleScore ? "score-na" : scoreClass(it.ai_score)}" title="${staleScore ? "Ancienne notation, en attente de recalcul (bouton Noter IA)" : "Note globale IA /100"}">${scoreDisplay}</div>
             </div>
             <div class="media-overlay-bottom">
               ${it.already_opened ? `<span class="badge badge-warn" title="${esc(it.opened_reason)}">${ICONS.alert} Déjà ouvert</span>` : ""}
@@ -320,6 +336,7 @@ function renderListings(items, showRejected) {
                           <span>Revente ~${Math.round(it.estimated_resale_eur || 0)} € · Pièces ~${Math.round(it.estimated_parts_eur || 0)} €</span>
                           ${profitHtml}
                         </div>
+                        ${riskLine}
                       `
                       : ""
                   }
@@ -397,8 +414,14 @@ function renderDrawer(it) {
         <h3>Analyse de marché & rentabilité</h3>
         <p style="margin:0 0 11px;font-size:13px;line-height:1.5;color:var(--text-soft);">${esc(deep.summary)}</p>
         <div class="kv-grid">
-          <div class="kv-item"><span>Valeur occasion</span><strong>${Math.round(deep.market_price_low_eur)} – ${Math.round(deep.market_price_high_eur)} €</strong></div>
-          <div class="kv-item"><span>Marge nette estimée</span><strong>${deep.estimated_net_profit_eur >= 0 ? "+" : ""}${Math.round(deep.estimated_net_profit_eur)} €</strong></div>
+          <div class="kv-item"><span>Valeur occasion (vendu)</span><strong>${Math.round(deep.market_price_low_eur)} – ${Math.round(deep.market_price_high_eur)} €</strong></div>
+          <div class="kv-item"><span>Gain espéré (pondéré risque)</span><strong class="${deep.estimated_net_profit_eur >= 0 ? "profit-pos" : "profit-neg"}">${euro(deep.estimated_net_profit_eur, true)}</strong></div>
+          ${
+            deep.success_pct !== undefined
+              ? `<div class="kv-item"><span>Chance de réussite</span><strong>${deep.success_pct}%</strong></div>
+                 <div class="kv-item"><span>Si réparé / perte max si échec</span><strong>${euro(deep.profit_if_success_eur, true)} / -${Math.round(deep.max_loss_eur)} €</strong></div>`
+              : ""
+          }
           <div class="kv-item"><span>Budget pièces</span><strong>~${Math.round(deep.estimated_parts_eur)} €</strong></div>
           <div class="kv-item"><span>Temps de réparation</span><strong>${esc(deep.estimated_repair_time)}</strong></div>
           <div class="kv-item" style="grid-column:1 / -1;"><span>Vitesse de revente</span><strong>${esc(deep.resale_speed)}</strong></div>
@@ -432,7 +455,19 @@ function renderDrawer(it) {
           : ""
       }
 
+      ${
+        deep.questions_for_seller && deep.questions_for_seller.length
+          ? `<div class="section-box">
+              <h3>Questions à poser au vendeur</h3>
+              <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.5;color:var(--text-soft);">
+                ${deep.questions_for_seller.map((q) => `<li>${esc(q)}</li>`).join("")}
+              </ul>
+            </div>`
+          : ""
+      }
+
       <div style="text-align:right;">
+        <span class="muted" style="font-size:11px;margin-right:8px;">${esc(deep.model || "")}</span>
         <button id="btn-run-deep" class="mini-btn">${ICONS.spark} Recalculer l'analyse approfondie</button>
       </div>
 
@@ -485,7 +520,19 @@ function renderDrawer(it) {
     <div class="section-box">
       <h3>${it.deep_analysis ? "Note recalibrée par analyse approfondie" : "Évaluation rapide"} (Score ${it.ai_score ?? "--"}/100)</h3>
       <p style="margin:0 0 6px;font-size:13px;"><strong>Panne suspectée :</strong> ${esc(it.suspected_fault || "NC")}</p>
-      <p class="muted" style="margin:0;font-size:13px;line-height:1.45;">${esc(it.ai_reasoning || "Non analysée.")}</p>
+      ${it.deep_analysis ? "" : `<p class="muted" style="margin:0;font-size:13px;line-height:1.45;">${esc(it.ai_reasoning || "Non analysée.")}</p>`}
+      ${
+        it.ai_analyzed && it.success_pct !== null && it.success_pct !== undefined
+          ? `<div class="kv-grid" style="margin-top:11px;">
+              <div class="kv-item"><span>Coût d'achat (prix + port)</span><strong>${euro(Number(it.price) + Number(it.shipping_price ?? 6))}</strong></div>
+              <div class="kv-item"><span>Revente estimée / pièces</span><strong>${euro(it.estimated_resale_eur)} / ${euro(it.estimated_parts_eur)}</strong></div>
+              <div class="kv-item"><span>Chance de réussite</span><strong>${it.success_pct}%</strong></div>
+              <div class="kv-item"><span>Si réparé / perte max</span><strong>${euro(it.profit_if_success_eur, true)} / -${Math.round(it.max_loss_eur || 0)} €</strong></div>
+              <div class="kv-item"><span>Gain espéré (pondéré risque)</span><strong class="${it.estimated_profit_eur >= 0 ? "profit-pos" : "profit-neg"}">${euro(it.estimated_profit_eur, true)}</strong></div>
+              <div class="kv-item"><span>Prix d'achat max conseillé</span><strong>${it.max_buy_price_eur ? euro(it.max_buy_price_eur) : "Pas rentable"}</strong></div>
+            </div>`
+          : ""
+      }
     </div>
 
     ${deepHtml}
@@ -508,7 +555,7 @@ function renderDrawer(it) {
   if (btnDeep) {
     btnDeep.addEventListener("click", async () => {
       btnDeep.disabled = true;
-      btnDeep.textContent = "Analyse Sonnet en cours...";
+      btnDeep.textContent = "Analyse approfondie en cours (30-60 s)...";
       try {
         const res = await api(`/api/listings/${it.id}/deep-analyze`, { method: "POST" });
         renderDrawer(res.item);

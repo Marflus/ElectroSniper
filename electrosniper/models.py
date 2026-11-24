@@ -45,6 +45,11 @@ class TriageResult:
     verdict: str  # "GO" | "A_VOIR" | "PASS"
     reasoning: str
     model: str
+    success_pct: int = 0
+    profit_if_success_eur: float = 0.0
+    max_loss_eur: float = 0.0
+    max_buy_price_eur: float = 0.0
+    score_version: int = 0
 
 
 @dataclass
@@ -69,3 +74,8 @@ class DeepAnalysisResult:
     seller_message_template: str = ""
     summary: str = ""
     model: str = ""
+    success_pct: int = 0
+    profit_if_success_eur: float = 0.0
+    max_loss_eur: float = 0.0
+    identified_model: str = ""
+    score_version: int = 0
