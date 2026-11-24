@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ElectroSniper — Radar Électronique</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%2306b6d4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M36 10L16 36h14l-2 18 20-26H34l2-18z' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+      </div>
+      <div>
+        <h1>ElectroSniper</h1>
+        <p id="status-step" class="subtitle">Initialisation...</p>
+      </div>
+    </div>
+
+    <div class="site-pills" id="site-pills"></div>
+
+    <div class="topbar-actions">
+      <div class="metric-chip" title="Coût API Anthropic estimé">
+        <span class="chip-label">IA</span>
+        <strong id="api-cost">$0.000</strong>
+      </div>
+      <div class="metric-chip" title="Prochain scan automatique">
+        <span class="chip-label">Scan</span>
+        <strong id="countdown">--:--</strong>
+      </div>
+      <button id="btn-triage-now" class="btn btn-accent" title="Noter immédiatement toutes les annonces en attente">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>
+        <span id="btn-triage-label">Noter IA</span>
+      </button>
+      <button id="btn-scan-now" class="btn btn-primary">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        <span>Scanner</span>
+      </button>
+      <button id="btn-pause" class="btn btn-ghost">Pause</button>
+      <button id="btn-logs" class="btn btn-ghost" title="Journal des scans">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        <span>Logs</span>
+      </button>
+      <button id="btn-settings" class="btn btn-ghost btn-square" title="Paramètres" aria-label="Paramètres">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="config-banner" class="banner hidden"></div>
+
+  <section class="stats-bar">
+    <div class="stat-card stat-card-highlight">
+      <span class="stat-label">Pépites (≥ <span id="lbl-threshold">72</span>)</span>
+      <strong id="stat-gems" class="accent-green">0</strong>
+      <span class="stat-sub">Offres rentables</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Récupérées (total)</span>
+      <strong id="stat-scanned" class="accent-cyan">0</strong>
+      <span class="stat-sub">Toutes sources</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Dernier scan</span>
+      <strong id="stat-last-scan">0</strong>
+      <span id="stat-last-scan-sub" class="stat-sub">0 retenues</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Retenues</span>
+      <strong id="stat-kept">0</strong>
+      <span id="stat-analyzed-sub" class="stat-sub">0 notées IA</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Écartées (total)</span>
+      <strong id="stat-rejected" class="muted">0</strong>
+      <span class="stat-sub">Filtre local</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Favoris</span>
+      <strong id="stat-fav">0</strong>
+      <span class="stat-sub">Suivi perso</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Alertes Telegram</span>
+      <strong id="stat-notified">0</strong>
+      <span class="stat-sub">Envoyées</span>
+    </div>
+  </section>
+
+  <section class="controls">
+    <div class="tabs" id="status-tabs">
+      <button class="tab active" data-status="active">Toutes</button>
+      <button class="tab" data-status="gems">Pépites</button>
+      <button class="tab" data-status="favorite">Favoris</button>
+      <button class="tab" data-status="bought">Achetés</button>
+      <button class="tab" data-status="ignored">Masqués</button>
+      <button class="tab" data-status="rejected">Écartées</button>
+    </div>
+
+    <div class="filters-row">
+      <div class="search-wrap">
+        <svg class="ic search-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="filter-search" placeholder="Rechercher un modèle, une marque ou une panne..." />
+      </div>
+      <select id="filter-site">
+        <option value="all">Tous les sites</option>
+        <option value="leboncoin">Leboncoin</option>
+        <option value="vinted">Vinted</option>
+        <option value="facebook">Facebook</option>
+        <option value="ebay">eBay</option>
+      </select>
+      <select id="filter-category">
+        <option value="all">Toutes catégories</option>
+        <option value="consoles">Consoles & Manettes</option>
+        <option value="informatique">Informatique</option>
+        <option value="outillage">Outillage électroportatif</option>
+        <option value="audio">Audio & Hi-Fi</option>
+        <option value="photo">Photo & Drone</option>
+        <option value="petit_electro">Petit Électroménager</option>
+        <option value="tablettes">Tablettes</option>
+      </select>
+      <select id="filter-sort">
+        <option value="score">Tri : Meilleur score</option>
+        <option value="profit">Tri : Marge estimée</option>
+        <option value="recent">Tri : Plus récentes</option>
+        <option value="price_asc">Tri : Prix croissant</option>
+      </select>
+      <label class="toggle-inline">
+        <input type="checkbox" id="filter-opened" />
+        <span>Déjà ouverts uniquement</span>
+      </label>
+    </div>
+  </section>
+
+  <div id="pagination-top" class="pagination-bar hidden"></div>
+
+  <main class="listings-grid" id="listings-grid">
+    <div class="empty-state">Chargement des annonces...</div>
+  </main>
+
+  <div id="pagination-bottom" class="pagination-bar hidden"></div>
+
+  <div id="drawer-backdrop" class="backdrop hidden"></div>
+  <aside id="detail-drawer" class="drawer hidden">
+    <div class="drawer-header">
+      <h2 id="drawer-title">Détail de l'annonce</h2>
+      <button id="drawer-close" class="btn-icon" aria-label="Fermer">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="drawer-body" class="drawer-body"></div>
+  </aside>
+
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Paramètres ElectroSniper</h2>
+        <button class="btn-icon" data-close-modal="settings-modal" aria-label="Fermer">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="settings-form" class="settings-form">
+        <div class="form-grid">
+          <label>Intervalle de scan (min)
+            <input type="number" name="SCAN_INTERVAL_MINUTES" min="5" max="120" />
+          </label>
+          <label>Note minimale alerte (/100)
+            <input type="number" name="MIN_ALERT_SCORE" min="1" max="100" />
+          </label>
+          <label>Marge min. alerte (€)
+            <input type="number" name="MIN_ALERT_PROFIT_EUR" min="0" step="5" />
+          </label>
+          <label>Prix min. (€)
+            <input type="number" name="MIN_PRICE_EUR" min="0" step="5" />
+          </label>
+          <label>Prix max. (€)
+            <input type="number" name="MAX_PRICE_EUR" min="10" step="10" />
+          </label>
+        </div>
+
+        <div class="form-grid form-grid-single">
+          <label>Zone Facebook Marketplace (france = toute la France, ou villes séparées par virgule)
+            <input type="text" name="FB_CITY" placeholder="france" />
+          </label>
+          <label>Cookie DataDome Leboncoin (optionnel si 403 — F12 sur leboncoin.fr → Application → Cookies → datadome)
+            <input type="text" name="LBC_DATADOME_COOKIE" placeholder="Coller la valeur du cookie datadome..." />
+          </label>
+        </div>
+
+        <div class="switches">
+          <label class="switch"><input type="checkbox" name="REQUIRE_SHIPPING" /> Livraison obligatoire uniquement</label>
+          <label class="switch"><input type="checkbox" name="EXCLUDE_ALREADY_OPENED" /> Exclure strictement les objets déjà ouverts / bricolés</label>
+          <label class="switch"><input type="checkbox" name="ENABLE_LEBONCOIN" /> Activer Leboncoin</label>
+          <label class="switch"><input type="checkbox" name="ENABLE_VINTED" /> Activer Vinted</label>
+          <label class="switch"><input type="checkbox" name="ENABLE_FACEBOOK" /> Activer Facebook Marketplace (Playwright + session)</label>
+          <label class="switch"><input type="checkbox" name="ENABLE_EBAY" /> Activer eBay (clés API dans .env)</label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="btn-test-telegram" class="btn btn-ghost">Tester Telegram</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="logs-modal" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <h2>Journal des scans</h2>
+        <button class="btn-icon" data-close-modal="logs-modal" aria-label="Fermer">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="logs-list" class="logs-list"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
